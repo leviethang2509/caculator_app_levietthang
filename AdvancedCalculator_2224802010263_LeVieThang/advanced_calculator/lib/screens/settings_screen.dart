@@ -57,7 +57,6 @@ class SettingsScreen extends StatelessWidget {
             },
           ),
           const Divider(),
-
           const ListTile(
             title: Text(
               'Tính toán',
@@ -68,9 +67,7 @@ class SettingsScreen extends StatelessWidget {
             value: calculatorProvider.settings.isDegreeMode,
             title: const Text('Angle Mode: Degree'),
             subtitle: const Text('Bật = DEG, Tắt = RAD'),
-            onChanged: (value) {
-              calculatorProvider.setAngleMode(value);
-            },
+            onChanged: calculatorProvider.setAngleMode,
           ),
           ListTile(
             title: const Text('Decimal Precision'),
@@ -89,7 +86,6 @@ class SettingsScreen extends StatelessWidget {
             },
           ),
           const Divider(),
-
           const ListTile(
             title: Text(
               'Phản hồi',
@@ -99,19 +95,14 @@ class SettingsScreen extends StatelessWidget {
           SwitchListTile(
             value: calculatorProvider.settings.hapticFeedback,
             title: const Text('Haptic Feedback'),
-            onChanged: (value) {
-              calculatorProvider.setHapticFeedback(value);
-            },
+            onChanged: calculatorProvider.setHapticFeedback,
           ),
           SwitchListTile(
             value: calculatorProvider.settings.soundEffects,
             title: const Text('Sound Effects'),
-            onChanged: (value) {
-              calculatorProvider.setSoundEffects(value);
-            },
+            onChanged: calculatorProvider.setSoundEffects,
           ),
           const Divider(),
-
           const ListTile(
             title: Text(
               'Lịch sử',
@@ -131,17 +122,11 @@ class SettingsScreen extends StatelessWidget {
             divisions: 3,
             label: calculatorProvider.settings.historySize.toString(),
             onChanged: (value) {
-              int newSize = 50;
-              if (value < 37.5) {
-                newSize = 25;
-              } else if (value < 62.5) {
-                newSize = 50;
-              } else if (value < 87.5) {
-                newSize = 75;
-              } else {
-                newSize = 100;
-              }
-              calculatorProvider.setHistorySize(newSize);
+              final allowed = [25, 50, 100];
+              final nearest = allowed.reduce((a, b) {
+                return (value - a).abs() < (value - b).abs() ? a : b;
+              });
+              calculatorProvider.setHistorySize(nearest);
             },
           ),
           ListTile(
@@ -152,7 +137,9 @@ class SettingsScreen extends StatelessWidget {
                 context: context,
                 builder: (_) => AlertDialog(
                   title: const Text('Xóa lịch sử'),
-                  content: const Text('Bạn có chắc muốn xóa toàn bộ lịch sử?'),
+                  content: const Text(
+                    'Bạn có chắc muốn xóa toàn bộ lịch sử?',
+                  ),
                   actions: [
                     TextButton(
                       onPressed: () => Navigator.pop(context, false),
@@ -168,9 +155,13 @@ class SettingsScreen extends StatelessWidget {
 
               if (confirmed == true && context.mounted) {
                 await context.read<HistoryProvider>().clearHistory();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Đã xóa toàn bộ lịch sử')),
-                );
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Đã xóa toàn bộ lịch sử'),
+                    ),
+                  );
+                }
               }
             },
           ),

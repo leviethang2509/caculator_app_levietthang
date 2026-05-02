@@ -50,7 +50,7 @@ class _CalculatorButtonState extends State<CalculatorButton> {
       onLongPress: widget.onLongPress,
       child: AnimatedScale(
         scale: _isPressed ? 0.94 : 1.0,
-        duration: const Duration(milliseconds: 120),
+        duration: const Duration(milliseconds: 200),
         child: Material(
           color: backgroundColor,
           borderRadius: BorderRadius.circular(16),
@@ -58,12 +58,18 @@ class _CalculatorButtonState extends State<CalculatorButton> {
             borderRadius: BorderRadius.circular(16),
             onTap: widget.onPressed,
             child: Center(
-              child: Text(
-                widget.label,
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w600,
-                  color: foregroundColor,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: Text(
+                    widget.label,
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w600,
+                      color: foregroundColor,
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -82,14 +88,20 @@ class _CalculatorButtonState extends State<CalculatorButton> {
       '=',
       '%',
       '√',
+      '∛',
       'x²',
       'x³',
       'xʸ',
+      'n!',
       'sin',
       'cos',
       'tan',
+      'asin',
+      'acos',
+      'atan',
       'ln',
       'log',
+      'log₂',
       'AND',
       'OR',
       'XOR',

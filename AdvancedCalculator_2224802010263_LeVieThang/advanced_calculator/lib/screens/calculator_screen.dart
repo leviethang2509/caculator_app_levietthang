@@ -19,6 +19,8 @@ class CalculatorScreen extends StatefulWidget {
 
 class _CalculatorScreenState extends State<CalculatorScreen> {
   double _baseFontScale = 1.0;
+  Offset _gestureDelta = Offset.zero;
+  bool _isPinching = false;
 
   @override
   Widget build(BuildContext context) {
@@ -51,14 +53,36 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
         ],
       ),
       body: GestureDetector(
-        onHorizontalDragEnd: (_) {
-          calculatorProvider.deleteLast();
-        },
-        onScaleStart: (_) {
+        onScaleStart: (details) {
           _baseFontScale = calculatorProvider.settings.fontScale;
+          _gestureDelta = Offset.zero;
+          _isPinching = false;
         },
         onScaleUpdate: (details) {
-          calculatorProvider.setFontScale(_baseFontScale * details.scale);
+          if (details.pointerCount > 1) {
+            _isPinching = true;
+            calculatorProvider.setFontScale(_baseFontScale * details.scale);
+          } else {
+            _gestureDelta += details.focalPointDelta;
+          }
+        },
+        onScaleEnd: (_) {
+          if (_isPinching) {
+            return;
+          }
+
+          const swipeThreshold = 48.0;
+          final dx = _gestureDelta.dx;
+          final dy = _gestureDelta.dy;
+
+          if (dx.abs() > dy.abs() && dx.abs() > swipeThreshold) {
+            calculatorProvider.deleteLast();
+          } else if (dy < -swipeThreshold) {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const HistoryScreen()),
+            );
+          }
         },
         child: SafeArea(
           child: Column(
@@ -72,19 +96,18 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
               Expanded(
                 flex: 3,
                 child: DisplayArea(
-  expression: calculatorProvider.result,
-  result: calculatorProvider.displayExpression,
-  previousResult: calculatorProvider.previousResult,
-  errorMessage: calculatorProvider.errorMessage,
-  fontScale: calculatorProvider.settings.fontScale,
-  histories: historyProvider.histories.take(3).toList(),
-  onHistoryTap: (item) {
-    calculatorProvider.clearEntry();
-    calculatorProvider.appendValue(item.expression);
-  },
-),
+                  expression: calculatorProvider.displayExpression,
+                  result: calculatorProvider.result,
+                  previousResult: calculatorProvider.previousResult,
+                  errorMessage: calculatorProvider.errorMessage,
+                  fontScale: calculatorProvider.settings.fontScale,
+                  histories: historyProvider.histories.take(3).toList(),
+                  onHistoryTap: (item) {
+                    calculatorProvider.clearEntry();
+                    calculatorProvider.appendValue(item.expression);
+                  },
                 ),
-              
+              ),
               Expanded(
                 flex: 5,
                 child: ButtonGrid(
@@ -94,6 +117,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
 
                     switch (value) {
                       case 'C':
+                      case 'CLR':
                         cp.clearAll();
                         break;
                       case 'CE':
@@ -104,7 +128,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
                         break;
                       case '=':
                         final expressionBefore = cp.expression;
-                        final result = cp.evaluateExpression();
+                        final result = cp.completeEvaluation();
                         if (cp.errorMessage.isEmpty &&
                             expressionBefore.isNotEmpty) {
                           await historyProvider.addHistory(
@@ -137,6 +161,9 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
                       case 'DEC':
                       case 'HEX':
                       case 'NOT':
+                      case 'AND':
+                      case 'OR':
+                      case 'XOR':
                       case '<<1':
                       case '>>1':
                         cp.applyProgrammerOperation(value);

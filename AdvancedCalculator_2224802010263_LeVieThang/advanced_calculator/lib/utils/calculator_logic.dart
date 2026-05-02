@@ -22,18 +22,18 @@ class CalculatorLogic {
       throw Exception('Biểu thức không hợp lệ');
     }
 
-    return _formatNumber(value, precision);
+    return formatNumber(value, precision);
   }
 
-  static String _formatNumber(double value, int precision) {
-    if (value == value.toInt()) {
-      return value.toInt().toString();
+  static String formatNumber(double value, int precision) {
+    if ((value - value.round()).abs() < 1e-10) {
+      return value.round().toString();
     }
 
     String text = value.toStringAsFixed(precision);
     text = text.replaceFirst(RegExp(r'0+$'), '');
     text = text.replaceFirst(RegExp(r'\.$'), '');
-    return text;
+    return text == '-0' ? '0' : text;
   }
 
   static double sinValue(double x, bool isDegreeMode) {

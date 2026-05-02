@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../models/calculator_mode.dart';
@@ -15,6 +16,8 @@ class CalculatorProvider extends ChangeNotifier {
   String _result = '0';
   String _previousResult = '';
   String _errorMessage = '';
+  String? _pendingBitwiseOperation;
+  int? _pendingBitwiseValue;
   double _memoryValue = 0;
   CalculatorMode _mode = CalculatorMode.basic;
   CalculatorSettings _settings = CalculatorSettings.defaultSettings();
@@ -34,7 +37,10 @@ class CalculatorProvider extends ChangeNotifier {
     return _expression
         .replaceAll('pi', 'π')
         .replaceAll('*', '×')
-        .replaceAll('/', '÷');
+        .replaceAll('/', '÷')
+        .replaceAll('sqrt', '√')
+        .replaceAll('cbrt', '∛')
+        .replaceAll('log2', 'log₂');
   }
 
   Future<void> loadSettings() async {
@@ -57,9 +63,6 @@ class CalculatorProvider extends ChangeNotifier {
       case 'π':
         _expression += 'pi';
         break;
-      case 'e':
-        _expression += 'e';
-        break;
       case '×':
         _expression += '*';
         break;
@@ -72,6 +75,9 @@ class CalculatorProvider extends ChangeNotifier {
       case '√':
         _expression += 'sqrt(';
         break;
+      case '∛':
+        _expression += 'cbrt(';
+        break;
       case 'x²':
         _expression += '^2';
         break;
@@ -81,23 +87,21 @@ class CalculatorProvider extends ChangeNotifier {
       case 'xʸ':
         _expression += '^';
         break;
+      case 'n!':
+        _expression += '!';
+        break;
+      case 'log₂':
+        _expression += 'log2(';
+        break;
       case 'ln':
-        _expression += 'ln(';
-        break;
       case 'log':
-        _expression += 'log(';
-        break;
       case 'sin':
-        _expression += 'sin(';
-        break;
       case 'cos':
-        _expression += 'cos(';
-        break;
       case 'tan':
-        _expression += 'tan(';
-        break;
-      case 'mod':
-        _expression += '%';
+      case 'asin':
+      case 'acos':
+      case 'atan':
+        _expression += '$value(';
         break;
       default:
         _expression += value;
@@ -111,6 +115,8 @@ class CalculatorProvider extends ChangeNotifier {
     _result = '0';
     _previousResult = '';
     _errorMessage = '';
+    _pendingBitwiseOperation = null;
+    _pendingBitwiseValue = null;
     notifyListeners();
   }
 
@@ -153,11 +159,20 @@ class CalculatorProvider extends ChangeNotifier {
       _previousResult = _result;
       notifyListeners();
       return _result;
-    } catch (e) {
+    } catch (_) {
       _errorMessage = 'Lỗi biểu thức';
       notifyListeners();
       return _result;
     }
+  }
+
+  String completeEvaluation() {
+    if (_pendingBitwiseOperation != null && _pendingBitwiseValue != null) {
+      _completeBitwiseOperation();
+      return _result;
+    }
+
+    return evaluateExpression();
   }
 
   void useResultInExpression() {
@@ -168,6 +183,8 @@ class CalculatorProvider extends ChangeNotifier {
 
   void setMode(CalculatorMode newMode) {
     _mode = newMode;
+    _pendingBitwiseOperation = null;
+    _pendingBitwiseValue = null;
     saveSettings();
     notifyListeners();
   }
@@ -215,58 +232,46 @@ class CalculatorProvider extends ChangeNotifier {
   }
 
   void memoryRecall() {
-    _expression += _formatMemoryValue(_memoryValue);
+    _expression = _formatMemoryValue(_memoryValue);
+    _result = _expression;
+    _errorMessage = '';
     notifyListeners();
   }
 
   void memoryAdd() {
-    try {
-      final value = double.tryParse(evaluateExpression()) ?? 0;
-      _memoryValue += value;
-      saveSettings();
-      notifyListeners();
-    } catch (_) {}
+    final value = double.tryParse(evaluateExpression()) ?? 0;
+    _memoryValue += value;
+    _expression = '';
+    _result = _formatMemoryValue(_memoryValue);
+    _errorMessage = '';
+    saveSettings();
+    notifyListeners();
   }
 
   void memorySubtract() {
-    try {
-      final value = double.tryParse(evaluateExpression()) ?? 0;
-      _memoryValue -= value;
-      saveSettings();
-      notifyListeners();
-    } catch (_) {}
-  }
-
-  void applyScientificShortcut(String key) {
-    switch (key) {
-      case '1/x':
-        _expression = '1/($_expression)';
-        break;
-      case 'n!':
-        _expression = 'factorial($_expression)';
-        break;
-      default:
-        appendValue(key);
-        return;
-    }
+    final value = double.tryParse(evaluateExpression()) ?? 0;
+    _memoryValue -= value;
+    _expression = '';
+    _result = _formatMemoryValue(_memoryValue);
+    _errorMessage = '';
+    saveSettings();
     notifyListeners();
   }
 
   void applyProgrammerOperation(String op) {
     try {
-      final current = int.tryParse(_expression) ?? 0;
-      int resultValue = current;
+      final current = _parseProgrammerValue(_expression);
 
       switch (op) {
         case 'NOT':
-          resultValue = ~current;
-          break;
+          _setProgrammerResult(~current);
+          return;
         case '<<1':
-          resultValue = current << 1;
-          break;
+          _setProgrammerResult(current << 1);
+          return;
         case '>>1':
-          resultValue = current >> 1;
-          break;
+          _setProgrammerResult(current >> 1);
+          return;
         case 'BIN':
           _result = current.toRadixString(2);
           notifyListeners();
@@ -276,55 +281,84 @@ class CalculatorProvider extends ChangeNotifier {
           notifyListeners();
           return;
         case 'HEX':
-          _result = current.toRadixString(16).toUpperCase();
+          _result = '0x${current.toRadixString(16).toUpperCase()}';
           notifyListeners();
           return;
         case 'DEC':
           _result = current.toString();
           notifyListeners();
           return;
+        case 'AND':
+        case 'OR':
+        case 'XOR':
+          _pendingBitwiseOperation = op;
+          _pendingBitwiseValue = current;
+          _expression = '';
+          _result = '$current $op';
+          notifyListeners();
+          return;
       }
-
-      _result = resultValue.toString();
-      notifyListeners();
     } catch (_) {
       _errorMessage = 'Lỗi chế độ lập trình';
       notifyListeners();
     }
   }
 
-  void applyBinaryOperation(String op, String secondValue) {
+  int applyBitwiseExpression(String first, String op, String second) {
+    final a = _parseProgrammerValue(first);
+    final b = _parseProgrammerValue(second);
+    switch (op) {
+      case 'AND':
+        return a & b;
+      case 'OR':
+        return a | b;
+      case 'XOR':
+        return a ^ b;
+      default:
+        throw Exception('Phép toán bit không hợp lệ');
+    }
+  }
+
+  void _completeBitwiseOperation() {
     try {
-      final a = int.tryParse(_expression) ?? 0;
-      final b = int.tryParse(secondValue) ?? 0;
-      int resultValue = 0;
-
-      switch (op) {
-        case 'AND':
-          resultValue = a & b;
-          break;
-        case 'OR':
-          resultValue = a | b;
-          break;
-        case 'XOR':
-          resultValue = a ^ b;
-          break;
-      }
-
-      _result = resultValue.toString();
-      notifyListeners();
+      final second = _parseProgrammerValue(_expression);
+      final value = applyBitwiseExpression(
+        _pendingBitwiseValue.toString(),
+        _pendingBitwiseOperation!,
+        second.toString(),
+      );
+      _setProgrammerResult(value);
+      _pendingBitwiseOperation = null;
+      _pendingBitwiseValue = null;
     } catch (_) {
       _errorMessage = 'Lỗi phép toán bit';
       notifyListeners();
     }
   }
 
+  void _setProgrammerResult(int value) {
+    _result = value.toString();
+    _previousResult = _result;
+    _expression = value.toString();
+    notifyListeners();
+  }
+
+  int _parseProgrammerValue(String value) {
+    final text = value.trim();
+    if (text.isEmpty) return 0;
+    if (text.toLowerCase().startsWith('0x')) {
+      return int.parse(text.substring(2), radix: 16);
+    }
+    if (RegExp(r'^[A-Fa-f]+$').hasMatch(text)) {
+      return int.parse(text, radix: 16);
+    }
+    return int.parse(text);
+  }
+
   String _formatMemoryValue(double value) {
     if (value == value.toInt()) {
       return value.toInt().toString();
     }
-    return value.toStringAsFixed(
-      math.min(_settings.decimalPrecision, 10),
-    );
+    return value.toStringAsFixed(math.min(_settings.decimalPrecision, 10));
   }
 }

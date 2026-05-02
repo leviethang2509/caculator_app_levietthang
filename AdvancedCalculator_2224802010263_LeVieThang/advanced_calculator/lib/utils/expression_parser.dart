@@ -2,23 +2,59 @@ import 'dart:math' as math;
 
 class ExpressionParser {
   static String normalizeExpression(String expression) {
-    return expression
+    final compact = expression
         .replaceAll(' ', '')
         .replaceAll('×', '*')
         .replaceAll('÷', '/')
         .replaceAll('−', '-')
-        .replaceAll('π', 'pi');
+        .replaceAll('π', 'pi')
+        .replaceAll('√', 'sqrt')
+        .replaceAll('∛', 'cbrt')
+        .replaceAll('log₂', 'logtwo')
+        .replaceAll('log2', 'logtwo');
+
+    return _addImplicitMultiplication(compact);
   }
 
   static double evaluateExpression(
     String expression, {
     required bool isDegreeMode,
   }) {
-    final parser = _Parser(
-      expression,
-      isDegreeMode: isDegreeMode,
-    );
+    final parser = _Parser(expression, isDegreeMode: isDegreeMode);
     return parser.parse();
+  }
+
+  static String _addImplicitMultiplication(String input) {
+    final buffer = StringBuffer();
+
+    for (int i = 0; i < input.length; i++) {
+      final current = input[i];
+      buffer.write(current);
+
+      if (i == input.length - 1) {
+        continue;
+      }
+
+      final next = input[i + 1];
+      final currentEndsValue = _isDigit(current) || current == ')' || current == '!';
+      final nextStartsValue = next == '(' || _isLetter(next);
+      final constantFollowedByValue =
+          (current == 'i' || current == 'e') && (next == '(' || _isDigit(next));
+
+      if ((currentEndsValue && nextStartsValue) || constantFollowedByValue) {
+        buffer.write('*');
+      }
+    }
+
+    return buffer.toString();
+  }
+
+  static bool _isDigit(String value) {
+    return RegExp(r'[0-9.]').hasMatch(value);
+  }
+
+  static bool _isLetter(String value) {
+    return RegExp(r'[a-zA-Z]').hasMatch(value);
   }
 }
 
@@ -74,7 +110,11 @@ class _Parser {
       if (eat('*'.codeUnitAt(0))) {
         x *= parseFactor();
       } else if (eat('/'.codeUnitAt(0))) {
-        x /= parseFactor();
+        final divisor = parseFactor();
+        if (divisor == 0) {
+          throw Exception('Không thể chia cho 0');
+        }
+        x /= divisor;
       } else if (eat('%'.codeUnitAt(0))) {
         x %= parseFactor();
       } else {
@@ -99,31 +139,21 @@ class _Parser {
       if (!eat(')'.codeUnitAt(0))) {
         throw Exception('Thiếu dấu )');
       }
-    } else if ((currentChar >= '0'.codeUnitAt(0) &&
-            currentChar <= '9'.codeUnitAt(0)) ||
-        currentChar == '.'.codeUnitAt(0)) {
-      while ((currentChar >= '0'.codeUnitAt(0) &&
-              currentChar <= '9'.codeUnitAt(0)) ||
-          currentChar == '.'.codeUnitAt(0)) {
+    } else if (_isNumberChar(currentChar)) {
+      while (_isNumberChar(currentChar)) {
         nextChar();
       }
       x = double.parse(text.substring(startPos, pos));
-    } else if ((currentChar >= 'a'.codeUnitAt(0) &&
-            currentChar <= 'z'.codeUnitAt(0)) ||
-        (currentChar >= 'A'.codeUnitAt(0) &&
-            currentChar <= 'Z'.codeUnitAt(0))) {
-      while ((currentChar >= 'a'.codeUnitAt(0) &&
-              currentChar <= 'z'.codeUnitAt(0)) ||
-          (currentChar >= 'A'.codeUnitAt(0) &&
-              currentChar <= 'Z'.codeUnitAt(0))) {
+    } else if (_isNameChar(currentChar)) {
+      while (_isNameChar(currentChar)) {
         nextChar();
       }
 
-      final func = text.substring(startPos, pos);
+      final name = text.substring(startPos, pos);
 
-      if (func == 'pi') {
+      if (name == 'pi') {
         x = math.pi;
-      } else if (func == 'e') {
+      } else if (name == 'e') {
         x = math.e;
       } else {
         if (eat('('.codeUnitAt(0))) {
@@ -131,50 +161,88 @@ class _Parser {
           if (!eat(')'.codeUnitAt(0))) {
             throw Exception('Thiếu dấu ) sau hàm');
           }
-          x = _applyFunction(func, arg);
+          x = _applyFunction(name, arg);
         } else {
-          x = parseFactor();
-          x = _applyFunction(func, x);
+          x = _applyFunction(name, parseFactor());
         }
       }
     } else {
       throw Exception('Biểu thức không hợp lệ');
     }
 
-    if (eat('^'.codeUnitAt(0))) {
-      x = math.pow(x, parseFactor()).toDouble();
+    while (true) {
+      if (eat('^'.codeUnitAt(0))) {
+        x = math.pow(x, parseFactor()).toDouble();
+      } else if (eat('!'.codeUnitAt(0))) {
+        x = _factorial(x);
+      } else {
+        return x;
+      }
     }
+  }
 
-    return x;
+  bool _isNumberChar(int char) {
+    return (char >= '0'.codeUnitAt(0) && char <= '9'.codeUnitAt(0)) ||
+        char == '.'.codeUnitAt(0);
+  }
+
+  bool _isNameChar(int char) {
+    return (char >= 'a'.codeUnitAt(0) && char <= 'z'.codeUnitAt(0)) ||
+        (char >= 'A'.codeUnitAt(0) && char <= 'Z'.codeUnitAt(0));
   }
 
   double _applyFunction(String func, double value) {
     switch (func) {
       case 'sqrt':
         return math.sqrt(value);
+      case 'cbrt':
+        return value < 0
+            ? -math.pow(-value, 1 / 3).toDouble()
+            : math.pow(value, 1 / 3).toDouble();
       case 'sin':
-        return math.sin(isDegreeMode ? value * math.pi / 180 : value);
+        return math.sin(_toRadians(value));
       case 'cos':
-        return math.cos(isDegreeMode ? value * math.pi / 180 : value);
+        return math.cos(_toRadians(value));
       case 'tan':
-        return math.tan(isDegreeMode ? value * math.pi / 180 : value);
+        return math.tan(_toRadians(value));
+      case 'asin':
+        return _fromRadians(math.asin(value));
+      case 'acos':
+        return _fromRadians(math.acos(value));
+      case 'atan':
+        return _fromRadians(math.atan(value));
       case 'ln':
         return math.log(value);
       case 'log':
         return math.log(value) / math.ln10;
+      case 'logtwo':
+        return math.log(value) / math.ln2;
       case 'abs':
         return value.abs();
       case 'factorial':
-        if (value < 0 || value != value.toInt()) {
-          throw Exception('Giai thừa không hợp lệ');
-        }
-        double result = 1;
-        for (int i = 1; i <= value.toInt(); i++) {
-          result *= i;
-        }
-        return result;
+        return _factorial(value);
       default:
         throw Exception('Hàm không hỗ trợ: $func');
     }
+  }
+
+  double _toRadians(double value) {
+    return isDegreeMode ? value * math.pi / 180 : value;
+  }
+
+  double _fromRadians(double value) {
+    return isDegreeMode ? value * 180 / math.pi : value;
+  }
+
+  double _factorial(double value) {
+    if (value < 0 || value != value.toInt()) {
+      throw Exception('Giai thừa không hợp lệ');
+    }
+
+    double result = 1;
+    for (int i = 1; i <= value.toInt(); i++) {
+      result *= i;
+    }
+    return result;
   }
 }
